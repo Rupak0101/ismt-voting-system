@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { isExpired } from '@/lib/vote-verification';
+import { fetchEventVotingStatus } from '@/lib/event-voting-status';
 
 export const runtime = 'nodejs';
+
+function getVotingStatusError(votingStatus: string): { error: string; code: string } | null {
+  if (votingStatus === 'running') return null;
+  if (votingStatus === 'paused') {
+    return { error: 'Voting is currently paused by admin.', code: 'VOTING_PAUSED' };
+  }
+  if (votingStatus === 'stopped') {
+    return { error: 'Voting has been stopped by admin.', code: 'VOTING_STOPPED' };
+  }
+  return { error: 'Voting has not started yet.', code: 'VOTING_NOT_STARTED' };
+}
 
 export async function POST(request: Request, context: { params: Promise<{ event_id: string }> }) {
   try {
@@ -20,6 +32,14 @@ export async function POST(request: Request, context: { params: Promise<{ event_
     }
     if (Number.isNaN(eventId)) {
       return NextResponse.json({ error: 'Failed to record vote' }, { status: 500 });
+    }
+
+    const event = await fetchEventVotingStatus(eventId);
+    if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+    const votingStatusError = getVotingStatusError(event.voting_status ?? 'not_started');
+    if (votingStatusError) {
+      return NextResponse.json(votingStatusError, { status: 403 });
     }
 
     const { data: candidate, error: candidateError } = await supabase

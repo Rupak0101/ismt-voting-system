@@ -15,8 +15,14 @@ export default function AdminDashboard() {
         
         <div className="card">
           <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Voting Events</h2>
-          <p style={{ color: 'var(--text-muted)' }}>Create events, add candidates, and view QR codes.</p>
+          <p style={{ color: 'var(--text-muted)' }}>Create events and manage voting access per contest.</p>
           <Link href="/admin/events" style={{ display: 'inline-block', marginTop: '1rem', color: 'var(--primary)' }}>Go to Events &rarr;</Link>
+        </div>
+
+        <div className="card">
+          <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Program Attendance</h2>
+          <p style={{ color: 'var(--text-muted)' }}>Track one-time registration records for all attendees.</p>
+          <Link href="/admin/registrations" style={{ display: 'inline-block', marginTop: '1rem', color: 'var(--primary)' }}>Go to Registrations &rarr;</Link>
         </div>
       </div>
     </div>

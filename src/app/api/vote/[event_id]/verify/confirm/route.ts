@@ -6,6 +6,7 @@ import { isExpired, normalizeEmail } from '@/lib/vote-verification';
 import {
   createVerifiedVoteToken,
   fetchRegisteredUserByEmail,
+  hasConfirmedProgramRegistration,
   hasAlreadyVoted,
 } from '@/lib/vote-access';
 
@@ -105,6 +106,10 @@ export async function GET(request: Request, context: { params: Promise<{ event_i
       if (user.college_id !== verification.college_id) {
         return redirectWithState('failed', verificationEmail);
       }
+      const hasConfirmedRegistration = await hasConfirmedProgramRegistration(user.college_id);
+      if (!hasConfirmedRegistration) {
+        return redirectWithState('not_registered', verificationEmail);
+      }
 
       const alreadyVoted = await hasAlreadyVoted(eventId, user.college_id);
       if (alreadyVoted) {
@@ -171,6 +176,10 @@ export async function GET(request: Request, context: { params: Promise<{ event_i
     const { user, duplicate } = await fetchRegisteredUserByEmail(authEmail);
     if (!user) {
       return redirectWithState(duplicate ? 'failed' : 'missing', authEmail);
+    }
+    const hasConfirmedRegistration = await hasConfirmedProgramRegistration(user.college_id);
+    if (!hasConfirmedRegistration) {
+      return redirectWithState('not_registered', authEmail);
     }
 
     const alreadyVoted = await hasAlreadyVoted(eventId, user.college_id);

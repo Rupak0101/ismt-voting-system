@@ -16,6 +16,7 @@ type EventPayload = {
     id: number;
     title: string;
     description: string | null;
+    voting_status: "not_started" | "running" | "paused" | "stopped";
   };
   candidates: CandidateResult[];
 };
@@ -50,15 +51,24 @@ function buildDonutGradient(results: CandidateResult[], totalVotes: number): str
   return `conic-gradient(${segments.join(", ")})`;
 }
 
+function formatVotingStatus(status: EventPayload["event"]["voting_status"]): string {
+  if (status === "running") return "Running";
+  if (status === "paused") return "Paused";
+  if (status === "stopped") return "Stopped";
+  return "Not Started";
+}
+
 export default function AdminEventDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = use(props.params);
   const eventId = params.id;
 
   const [eventData, setEventData] = useState<EventPayload | null>(null);
   const [results, setResults] = useState<CandidateResult[]>([]);
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [voteQrCodeDataUrl, setVoteQrCodeDataUrl] = useState("");
   const [newCandidate, setNewCandidate] = useState<NewCandidate>({ name: "", description: "", image_url: "" });
   const [candidateImagePreview, setCandidateImagePreview] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const candidateImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchEventDetails = useCallback(async () => {
@@ -74,11 +84,11 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
     }
   }, [eventId]);
 
-  const generateQR = useCallback(async () => {
-    const url = `${window.location.origin}/vote/${eventId}`;
+  const generateVotingQR = useCallback(async () => {
+    const voteUrl = `${window.location.origin}/vote/${eventId}`;
     try {
-      const dataUrl = await QRCode.toDataURL(url, { width: 300, color: { dark: "#0b0f19", light: "#f8fafc" } });
-      setQrCodeDataUrl(dataUrl);
+      const voteQr = await QRCode.toDataURL(voteUrl, { width: 220, color: { dark: "#0b0f19", light: "#f8fafc" } });
+      setVoteQrCodeDataUrl(voteQr);
     } catch (err) {
       console.error(err);
     }
@@ -88,18 +98,44 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
     const initialLoadTimeout = window.setTimeout(() => {
       void fetchEventDetails();
       void fetchResults();
-      void generateQR();
+      void generateVotingQR();
     }, 0);
 
     const intervalId = window.setInterval(() => {
       void fetchResults();
+      void fetchEventDetails();
     }, 15000);
 
     return () => {
       window.clearTimeout(initialLoadTimeout);
       window.clearInterval(intervalId);
     };
-  }, [fetchEventDetails, fetchResults, generateQR]);
+  }, [fetchEventDetails, fetchResults, generateVotingQR]);
+
+  const updateVotingStatus = async (action: "start" | "pause" | "unpause" | "stop") => {
+    if (isUpdatingStatus) return;
+
+    setIsUpdatingStatus(true);
+    setStatusMessage("");
+    try {
+      const res = await fetch(`/api/events/${eventId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json()) as { error?: string; voting_status?: EventPayload["event"]["voting_status"] };
+
+      if (!res.ok) {
+        setStatusMessage(data.error || "Failed to update voting status.");
+        return;
+      }
+
+      setStatusMessage(`Voting status updated to ${formatVotingStatus(data.voting_status ?? "not_started")}.`);
+      void fetchEventDetails();
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const handleAddCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,19 +185,80 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
   const marginVotes = leader ? leader.vote_count - (runnerUp?.vote_count ?? 0) : 0;
   const leaderShare = leader && totalVotes > 0 ? (leader.vote_count / totalVotes) * 100 : 0;
   const donutStyle: CSSProperties = { background: buildDonutGradient(results, totalVotes) };
+  const votingPageUrl = typeof window !== "undefined" ? `${window.location.origin}/vote/${eventId}` : `/vote/${eventId}`;
+  const votingStatus = eventData.event.voting_status ?? "not_started";
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4" style={{ alignItems: "flex-start" }}>
         <div>
           <h1 className="page-title">{eventData.event.title}</h1>
           <p className="page-subtitle">{eventData.event.description}</p>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          {qrCodeDataUrl && (
-            <img src={qrCodeDataUrl} alt="QR Code" style={{ borderRadius: "8px", border: "2px solid var(--primary)" }} />
+          <div style={{ marginTop: "0.4rem", fontWeight: 700 }}>
+            Voting Status:{" "}
+            <span style={{ color: votingStatus === "running" ? "var(--success)" : votingStatus === "paused" ? "#b45309" : "var(--danger)" }}>
+              {formatVotingStatus(votingStatus)}
+            </span>
+          </div>
+          {statusMessage && (
+            <div style={{ marginTop: "0.5rem", color: statusMessage.toLowerCase().includes("failed") ? "var(--danger)" : "var(--success)" }}>
+              {statusMessage}
+            </div>
           )}
-          <div style={{ fontSize: "0.875rem", marginTop: "0.5rem", color: "var(--primary)" }}>Scan to Vote</div>
+        </div>
+        <div
+          className="card"
+          style={{ width: "360px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <h3 style={{ marginBottom: "0.5rem", fontSize: "1.05rem" }}>Voting QR</h3>
+            {voteQrCodeDataUrl && (
+              <img
+                src={voteQrCodeDataUrl}
+                alt="Voting QR Code"
+                style={{ borderRadius: "8px", border: "2px solid var(--primary)" }}
+              />
+            )}
+            <div style={{ fontSize: "0.875rem", marginTop: "0.5rem", color: "var(--primary)" }}>Scan to Vote</div>
+            <div style={{ fontSize: "0.75rem", marginTop: "0.25rem", color: "var(--text-muted)", wordBreak: "break-all" }}>
+              {votingPageUrl}
+            </div>
+          </div>
+
+          <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.55rem", display: "grid", gap: "0.45rem" }}>
+            <button
+              type="button"
+              className={votingStatus === "not_started" ? "primary" : "secondary-cta"}
+              disabled={isUpdatingStatus || votingStatus !== "not_started"}
+              onClick={() => updateVotingStatus("start")}
+            >
+              Start Voting
+            </button>
+            <button
+              type="button"
+              className={votingStatus === "running" ? "primary" : "secondary-cta"}
+              disabled={isUpdatingStatus || votingStatus !== "running"}
+              onClick={() => updateVotingStatus("pause")}
+            >
+              Pause Voting
+            </button>
+            <button
+              type="button"
+              className={votingStatus === "paused" ? "primary" : "secondary-cta"}
+              disabled={isUpdatingStatus || votingStatus !== "paused"}
+              onClick={() => updateVotingStatus("unpause")}
+            >
+              Unpause Voting
+            </button>
+            <button
+              type="button"
+              className={votingStatus === "stopped" ? "primary" : "secondary-cta"}
+              disabled={isUpdatingStatus || votingStatus === "stopped"}
+              onClick={() => updateVotingStatus("stop")}
+            >
+              Stop Voting
+            </button>
+          </div>
         </div>
       </div>
 

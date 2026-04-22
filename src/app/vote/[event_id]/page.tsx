@@ -17,17 +17,6 @@ type EventData = {
   candidates: Candidate[];
 };
 
-const DEFAULT_OTP_RETRY_AFTER_SECONDS = 60;
-
-function parseRetryAfterSeconds(value: unknown): number | null {
-  if (typeof value !== "number" && typeof value !== "string") return null;
-
-  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-
-  return Math.max(1, Math.ceil(parsed));
-}
-
 export default function VotePage(props: { params: Promise<{ event_id: string }> }) {
   const params = use(props.params);
   const eventId = params.event_id;
@@ -38,10 +27,9 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
   const isVerifiedFromEmailLink = Boolean(queryVerificationState === "success" && queryVerificationToken);
   const isAlreadyVotedFromEmailLink = queryVerificationState === "already_voted" || queryVerificationState === "already_used";
 
-  const [step, setStep] = useState<"VERIFY" | "CHECK_EMAIL" | "VOTE" | "SUCCESS" | "ERROR">(
+  const [step, setStep] = useState<"VERIFY" | "VOTE" | "SUCCESS" | "ERROR">(
     isVerifiedFromEmailLink ? "VOTE" : isAlreadyVotedFromEmailLink ? "ERROR" : "VERIFY"
   );
-  const isReverificationFlow = queryVerificationState === "expired" || queryVerificationState === "missing" || queryVerificationState === "failed";
   const [email, setEmail] = useState(queryEmail);
   const [verificationToken, setVerificationToken] = useState(isVerifiedFromEmailLink ? queryVerificationToken! : "");
   const [message, setMessage] = useState(() => {
@@ -50,6 +38,9 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
     }
     if (queryVerificationState === "expired") {
       return "Verification link expired. Please request a new link.";
+    }
+    if (queryVerificationState === "not_registered") {
+      return "Complete program registration first, then return here to vote.";
     }
     if (isAlreadyVotedFromEmailLink) {
       return "You have already voted in this event.";
@@ -62,8 +53,7 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
   const [isMessageError, setIsMessageError] = useState(!isVerifiedFromEmailLink);
   const [eventData, setEventData] = useState<EventData | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
-  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
-  const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
 
   useEffect(() => {
     const loadEventData = async () => {
@@ -74,59 +64,48 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
     void loadEventData();
   }, [eventId]);
 
-  useEffect(() => {
-    if (resendCooldownSeconds <= 0) return;
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isCheckingEligibility) return;
 
-    const intervalId = window.setInterval(() => {
-      setResendCooldownSeconds(currentValue => (currentValue <= 1 ? 0 : currentValue - 1));
-    }, 1_000);
-
-    return () => window.clearInterval(intervalId);
-  }, [resendCooldownSeconds]);
-
-  const requestVerification = async () => {
-    if (isRequestingVerification || resendCooldownSeconds > 0) return;
-
-    setIsRequestingVerification(true);
+    setIsCheckingEligibility(true);
     setMessage("");
     setIsMessageError(true);
+
     try {
       const res = await fetch(`/api/vote/${eventId}/verify`, {
         method: "POST",
         body: JSON.stringify({ email }),
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
-      const data = await res.json();
-      const retryAfterSeconds = parseRetryAfterSeconds((data as { retry_after_seconds?: unknown }).retry_after_seconds);
+      const data = (await res.json()) as {
+        verified?: boolean;
+        verification_token?: string;
+        user?: { name?: string };
+        code?: string;
+        error?: string;
+      };
 
-      if (retryAfterSeconds) {
-        setResendCooldownSeconds(currentValue => Math.max(currentValue, retryAfterSeconds));
-      }
-
-      if (res.ok && data.verification_sent) {
-        setStep("CHECK_EMAIL");
-        setMessage("Verification link sent to your email. Open it to continue voting.");
-        setIsMessageError(false);
-        setResendCooldownSeconds(
-          currentValue => Math.max(currentValue, retryAfterSeconds ?? DEFAULT_OTP_RETRY_AFTER_SECONDS)
+      if (res.ok && data.verified && data.verification_token) {
+        setVerificationToken(data.verification_token);
+        setStep("VOTE");
+        setMessage(
+          data.user?.name
+            ? `Registration verified for ${data.user.name}. You can vote now.`
+            : "Registration verified. You can vote now."
         );
-      } else {
-        if (data.code === "ALREADY_VOTED") {
-          setStep("ERROR");
-          setMessage(data.error);
-        } else {
-          setMessage(data.error || "Verification failed");
-          setIsMessageError(true);
-        }
+        setIsMessageError(false);
+        return;
       }
-    } finally {
-      setIsRequestingVerification(false);
-    }
-  };
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await requestVerification();
+      if (data.code === "ALREADY_VOTED") {
+        setStep("ERROR");
+      }
+      setMessage(data.error || "Voting eligibility check failed");
+      setIsMessageError(true);
+    } finally {
+      setIsCheckingEligibility(false);
+    }
   };
 
   const handleSubmitVote = async () => {
@@ -171,8 +150,10 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
         {step === "VERIFY" && (
           <form onSubmit={handleVerify} className="flex" style={{ flexDirection: "column", gap: "1.5rem" }}>
             <div style={{ textAlign: "center" }}>
-              <h2 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Identity Verification</h2>
-              <p style={{ color: "var(--text-muted)" }}>Enter your admin-registered email to receive a verification link.</p>
+              <h2 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Registration Check</h2>
+              <p style={{ color: "var(--text-muted)" }}>
+                Enter your email used for event registration. Only confirmed attendees can vote.
+              </p>
             </div>
             {message && <div className={`message ${isMessageError ? "error" : "success"}`}>{message}</div>}
             <input
@@ -185,64 +166,18 @@ export default function VotePage(props: { params: Promise<{ event_id: string }> 
             />
             <button
               type="submit"
-              disabled={isRequestingVerification || resendCooldownSeconds > 0}
+              disabled={isCheckingEligibility}
               className="primary"
               style={{
                 padding: "1rem",
                 fontSize: "1.125rem",
-                opacity: isRequestingVerification || resendCooldownSeconds > 0 ? 0.7 : 1,
-                cursor: isRequestingVerification || resendCooldownSeconds > 0 ? "not-allowed" : "pointer"
+                opacity: isCheckingEligibility ? 0.7 : 1,
+                cursor: isCheckingEligibility ? "not-allowed" : "pointer"
               }}
             >
-              {isRequestingVerification
-                ? "Sending..."
-                : resendCooldownSeconds > 0
-                ? `Wait ${resendCooldownSeconds}s`
-                : isReverificationFlow
-                ? "Request New Verification Link"
-                : "Verify & Continue"}
+              {isCheckingEligibility ? "Checking..." : "Continue to Vote"}
             </button>
           </form>
-        )}
-
-        {step === "CHECK_EMAIL" && (
-          <div className="flex" style={{ flexDirection: "column", gap: "1.5rem" }}>
-            <div style={{ textAlign: "center" }}>
-              <h2 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>Confirm Your Email</h2>
-              <p style={{ color: "var(--text-muted)" }}>Click the verification link sent to {email || "your email"} to unlock voting.</p>
-            </div>
-            {message && <div className={`message ${isMessageError ? "error" : "success"}`}>{message}</div>}
-              <button
-                type="button"
-                onClick={() => requestVerification()}
-                disabled={isRequestingVerification || resendCooldownSeconds > 0}
-                style={{
-                  padding: "0.75rem",
-                  borderRadius: "10px",
-                  border: "1px solid var(--border-color)",
-                  background: "transparent",
-                  cursor: isRequestingVerification || resendCooldownSeconds > 0 ? "not-allowed" : "pointer",
-                  opacity: isRequestingVerification || resendCooldownSeconds > 0 ? 0.7 : 1
-                }}
-              >
-                {isRequestingVerification
-                  ? "Sending..."
-                  : resendCooldownSeconds > 0
-                  ? `Resend in ${resendCooldownSeconds}s`
-                  : "Resend Verification Link"}
-              </button>
-            <button
-              type="button"
-              onClick={() => {
-                setStep("VERIFY");
-                setMessage("");
-                setIsMessageError(true);
-              }}
-              style={{ padding: "0.75rem", borderRadius: "10px", border: "1px solid var(--border-color)", background: "transparent", cursor: "pointer" }}
-            >
-              Use a Different Email
-            </button>
-          </div>
         )}
 
         {step === "VOTE" && (

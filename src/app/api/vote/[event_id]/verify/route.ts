@@ -1,116 +1,125 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
-import { EMAIL_VERIFICATION_WINDOW_SECONDS, normalizeEmail } from '@/lib/vote-verification';
+import type { NextRequest } from 'next/server';
+import { normalizeEmail } from '@/lib/vote-verification';
 import {
-  createPendingVoteVerification,
+  createVerifiedVoteToken,
+  fetchRegisteredUserByCollegeId,
   fetchRegisteredUserByEmail,
+  hasConfirmedProgramRegistration,
   hasAlreadyVoted,
 } from '@/lib/vote-access';
-import { sendVoteVerificationLinkEmail } from '@/lib/verification-email';
+import { fetchEventVotingStatus } from '@/lib/event-voting-status';
+import {
+  PROGRAM_REGISTRATION_SESSION_COOKIE_NAME,
+  verifyProgramRegistrationSessionToken,
+} from '@/lib/registration-session';
 
 export const runtime = 'nodejs';
-const DEFAULT_OTP_RETRY_AFTER_SECONDS = 60;
 
-async function getRetryAfterSeconds(eventId: number, email: string): Promise<number | null> {
-  const { data, error } = await supabase
-    .from('vote_email_verifications')
-    .select('created_at')
-    .eq('event_id', eventId)
-    .eq('email', email)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.created_at) return null;
-
-  const createdAtMs = Date.parse(data.created_at);
-  if (Number.isNaN(createdAtMs)) return null;
-
-  const elapsedSeconds = Math.floor((Date.now() - createdAtMs) / 1_000);
-  const remainingSeconds = DEFAULT_OTP_RETRY_AFTER_SECONDS - elapsedSeconds;
-  return remainingSeconds > 0 ? remainingSeconds : null;
+function getVotingStatusError(votingStatus: string): { error: string; code: string } | null {
+  if (votingStatus === 'running') return null;
+  if (votingStatus === 'paused') {
+    return { error: 'Voting is currently paused by admin.', code: 'VOTING_PAUSED' };
+  }
+  if (votingStatus === 'stopped') {
+    return { error: 'Voting has been stopped by admin.', code: 'VOTING_STOPPED' };
+  }
+  return { error: 'Voting has not started yet.', code: 'VOTING_NOT_STARTED' };
 }
 
-export async function POST(request: Request, context: { params: Promise<{ event_id: string }> }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ event_id: string }> }) {
   try {
     const { event_id } = await context.params;
     const eventId = Number(event_id);
-    const { email } = (await request.json()) as { email?: string };
-    const normalizedEmail = email ? normalizeEmail(email) : '';
-
-    if (!normalizedEmail) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
-    }
     if (Number.isNaN(eventId)) return NextResponse.json({ error: 'Verification failed' }, { status: 500 });
 
-    const { data: event, error: eventError } = await supabase
-      .from('events')
-      .select('title')
-      .eq('id', eventId)
-      .maybeSingle();
+    const parsedBody = (await request.json().catch(() => ({}))) as { email?: string };
+    const normalizedEmail = parsedBody.email ? normalizeEmail(parsedBody.email) : '';
+    const sessionToken = request.cookies.get(PROGRAM_REGISTRATION_SESSION_COOKIE_NAME)?.value ?? '';
+    const sessionPayload = sessionToken ? verifyProgramRegistrationSessionToken(sessionToken) : null;
+    const sessionEmail = sessionPayload ? normalizeEmail(sessionPayload.email) : '';
+    const canUseSessionForRequest = Boolean(sessionPayload && (!normalizedEmail || normalizedEmail === sessionEmail));
 
-    if (eventError) throw eventError;
+    const event = await fetchEventVotingStatus(eventId);
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
-    const { user, duplicate } = await fetchRegisteredUserByEmail(normalizedEmail);
-    if (!user) {
-      if (duplicate) {
+    const votingStatusError = getVotingStatusError(event.voting_status ?? 'not_started');
+    if (votingStatusError) {
+      return NextResponse.json(votingStatusError, { status: 403 });
+    }
+
+    let user = null as Awaited<ReturnType<typeof fetchRegisteredUserByCollegeId>> | null;
+    let verificationSource: 'PROGRAM_SESSION' | 'EMAIL_LOOKUP' = 'EMAIL_LOOKUP';
+
+    if (canUseSessionForRequest && sessionPayload) {
+      user = await fetchRegisteredUserByCollegeId(sessionPayload.college_id);
+      if (user) verificationSource = 'PROGRAM_SESSION';
+    }
+
+    if (!user && normalizedEmail) {
+      const byEmail = await fetchRegisteredUserByEmail(normalizedEmail);
+      if (!byEmail.user) {
+        if (byEmail.duplicate) {
+          return NextResponse.json(
+            { error: 'This email is linked to multiple accounts. Please contact admin.', code: 'DUPLICATE_EMAIL' },
+            { status: 409 }
+          );
+        }
         return NextResponse.json(
-          { error: 'This email is linked to multiple accounts. Please contact admin.', code: 'DUPLICATE_EMAIL' },
-          { status: 409 }
+          {
+            error: 'Email is not registered. Only pre-registered users can vote.',
+            code: 'INVALID_USER',
+          },
+          { status: 401 }
         );
       }
-      return NextResponse.json({ error: 'Email is not registered. Identity not verified.', code: 'INVALID_USER' }, { status: 401 });
+      user = byEmail.user;
+      verificationSource = 'EMAIL_LOOKUP';
     }
-    const alreadyVoted = await hasAlreadyVoted(eventId, user.college_id);
-    if (alreadyVoted) return NextResponse.json({ error: 'You have already voted in this event.', code: 'ALREADY_VOTED' }, { status: 403 });
 
-    const retryAfterSeconds = await getRetryAfterSeconds(eventId, normalizedEmail);
-    if (retryAfterSeconds) {
+    if (!user) {
       return NextResponse.json(
-        { error: `Please wait ${retryAfterSeconds}s before requesting another link.`, retry_after_seconds: retryAfterSeconds },
-        { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } }
+        {
+          error: 'You must complete registration first. Scan registration QR and confirm your email.',
+          code: 'NOT_REGISTERED',
+        },
+        { status: 403 }
       );
     }
 
-    const { confirmationToken } = await createPendingVoteVerification({
+    const hasConfirmedRegistration = await hasConfirmedProgramRegistration(user.college_id);
+    if (!hasConfirmedRegistration) {
+      return NextResponse.json(
+        {
+          error: 'You must complete registration first. Scan registration QR and confirm your email.',
+          code: 'NOT_REGISTERED',
+        },
+        { status: 403 }
+      );
+    }
+
+    const alreadyVoted = await hasAlreadyVoted(eventId, user.college_id);
+    if (alreadyVoted) {
+      return NextResponse.json({ error: 'You have already voted in this event.', code: 'ALREADY_VOTED' }, { status: 403 });
+    }
+
+    const confirmationToken = await createVerifiedVoteToken({
       eventId,
       collegeId: user.college_id,
-      email: normalizedEmail,
-      source: 'EMAIL_LINK',
-    });
-
-    const origin = new URL(request.url).origin;
-    const confirmUrl = new URL(`/api/vote/${eventId}/verify/confirm`, origin);
-    confirmUrl.searchParams.set('verification_token', confirmationToken);
-    confirmUrl.searchParams.set('email', normalizedEmail);
-
-    await sendVoteVerificationLinkEmail({
-      toEmail: normalizedEmail,
-      recipientName: user.name,
-      eventTitle: event.title,
-      verificationUrl: confirmUrl.toString(),
+      email: user.email,
+      source: verificationSource,
     });
 
     return NextResponse.json({
-      verification_sent: true,
-      expires_in_seconds: EMAIL_VERIFICATION_WINDOW_SECONDS,
-      retry_after_seconds: DEFAULT_OTP_RETRY_AFTER_SECONDS,
+      verified: true,
+      verification_token: confirmationToken,
       user: { name: user.name, role: user.role },
     });
   } catch (error) {
     console.error(error);
-    if (error instanceof Error && error.message.startsWith('SMTP_ENV_MISSING:')) {
-      const missingVarName = error.message.replace('SMTP_ENV_MISSING:', '');
-      return NextResponse.json(
-        { error: `SMTP is not configured. Missing ${missingVarName}.` },
-        { status: 500 }
-      );
-    }
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'PGRST205') {
       return NextResponse.json(
-        { error: 'Verification storage is not initialized. Run the latest database schema update.' },
+        { error: 'Voting access storage is not initialized. Run the latest database schema update.' },
         { status: 500 }
       );
     }

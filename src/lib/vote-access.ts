@@ -12,6 +12,24 @@ export type RegisteredUser = {
   email: string;
 };
 
+export async function fetchRegisteredUserByCollegeId(collegeId: string): Promise<RegisteredUser | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('college_id, name, role, email')
+    .eq('college_id', collegeId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.email) return null;
+
+  return {
+    college_id: data.college_id,
+    name: data.name,
+    role: data.role,
+    email: normalizeEmail(data.email),
+  };
+}
+
 export async function fetchRegisteredUserByEmail(email: string): Promise<{
   user: RegisteredUser | null;
   duplicate: boolean;
@@ -51,6 +69,18 @@ export async function hasAlreadyVoted(eventId: number, collegeId: string): Promi
 
   if (error) throw error;
   return Boolean(vote);
+}
+
+export async function hasConfirmedProgramRegistration(collegeId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('program_registrations')
+    .select('id')
+    .eq('college_id', collegeId)
+    .eq('status', 'confirmed')
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function createVerifiedVoteToken(params: {

@@ -22,7 +22,7 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Email verification configuration
 
-Voting verification links are now sent by this app through SMTP (instead of Supabase Auth OTP), so configure these environment variables:
+Registration confirmation links are sent by this app through SMTP, so configure these environment variables:
 
 ```bash
 SMTP_HOST=
@@ -34,6 +34,18 @@ SMTP_FROM=
 ```
 
 If `SMTP_FROM` is not set, `SMTP_USER` is used as the sender address.
+
+## Registration-first voting flow
+
+- Users must be pre-registered by admin in **Manage Students/Faculty**.
+- Users complete **one-time program registration** at `/register`, then confirm attendance by email link.
+- Only users with **confirmed program registration** can vote.
+- Voting remains one vote per user per event.
+- Admin can review all attendance records in **Admin → Program Registrations**.
+
+## Database schema update
+
+Apply the latest `supabase_schema.sql` so `program_registrations` exists before using registration flows.
 
 ## Admin authentication configuration
 

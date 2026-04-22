@@ -56,3 +56,28 @@ If you did not request this, you can ignore this email.`;
     text,
   });
 }
+
+export async function sendRegistrationConfirmationLinkEmail(params: {
+  toEmail: string;
+  recipientName: string;
+  eventTitle: string;
+  verificationUrl: string;
+}): Promise<void> {
+  const transporter = getEmailTransporter();
+  const from = process.env.SMTP_FROM ?? getRequiredEnv('SMTP_USER');
+  const subject = `Confirm your registration for ${params.eventTitle}`;
+  const text = `Hi ${params.recipientName},
+
+Please confirm your event registration (attendance) using this link:
+${params.verificationUrl}
+
+This link expires in ${EMAIL_VERIFICATION_WINDOW_MINUTES} minutes.
+If you did not request this, you can ignore this email.`;
+
+  await transporter.sendMail({
+    from,
+    to: params.toEmail,
+    subject,
+    text,
+  });
+}

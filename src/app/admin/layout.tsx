@@ -42,6 +42,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <li>
               <Link href="/admin/events">Manage Events</Link>
             </li>
+            <li>
+              <Link href="/admin/registrations">Program Registrations</Link>
+            </li>
           </ul>
           <button type="button" className="secondary-cta" onClick={handleLogout} disabled={isLoggingOut} style={{ width: "100%" }}>
             {isLoggingOut ? "Logging out..." : "Logout"}

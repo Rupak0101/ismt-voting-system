@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { fetchEventVotingStatus } from '@/lib/event-voting-status';
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -19,6 +20,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (eventError) throw eventError;
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
+    const eventVotingStatus = await fetchEventVotingStatus(eventId);
+    const eventWithStatus = {
+      ...event,
+      voting_status: eventVotingStatus?.voting_status ?? 'not_started',
+    };
+
     const { data: candidates, error: candidatesError } = await supabase
       .from('candidates')
       .select('*')
@@ -26,7 +33,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     if (candidatesError) throw candidatesError;
 
-    return NextResponse.json({ event, candidates: candidates ?? [] });
+    return NextResponse.json({ event: eventWithStatus, candidates: candidates ?? [] });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: 'Failed to fetch event' }, { status: 500 });
