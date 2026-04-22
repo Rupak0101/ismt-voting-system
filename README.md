@@ -20,6 +20,34 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Email verification configuration
+
+Voting verification links are now sent by this app through SMTP (instead of Supabase Auth OTP), so configure these environment variables:
+
+```bash
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+```
+
+If `SMTP_FROM` is not set, `SMTP_USER` is used as the sender address.
+
+## Admin authentication configuration
+
+Admin routes now require login with server-configured credentials. Add these variables to `.env.local`:
+
+```bash
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+ADMIN_SESSION_SECRET=
+```
+
+- `ADMIN_SESSION_SECRET` should be a long random string.
+- Admin login page: `http://localhost:3000/admin/login`
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
