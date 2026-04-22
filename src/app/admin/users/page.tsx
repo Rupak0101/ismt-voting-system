@@ -19,7 +19,14 @@ export default function AdminUsersPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [users, setUsers] = useState<User[]>([]);
+  const [editingCollegeId, setEditingCollegeId] = useState<string | null>(null);
+  const [busyCollegeId, setBusyCollegeId] = useState<string | null>(null);
   const [manualForm, setManualForm] = useState<ManualUserForm>({
+    name: "",
+    role: "student",
+    email: "",
+  });
+  const [editForm, setEditForm] = useState<ManualUserForm>({
     name: "",
     role: "student",
     email: "",
@@ -35,6 +42,22 @@ export default function AdminUsersPage() {
       console.error(err);
     }
   }, []);
+
+  const startEditing = (user: User) => {
+    setError("");
+    setMessage("");
+    setEditingCollegeId(user.college_id);
+    setEditForm({
+      name: user.name,
+      role: user.role,
+      email: user.email ?? "",
+    });
+  };
+
+  const cancelEditing = () => {
+    setEditingCollegeId(null);
+    setEditForm({ name: "", role: "student", email: "" });
+  };
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -96,10 +119,64 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleUpdateParticipant = async (collegeId: string) => {
+    if (!editingCollegeId || editingCollegeId !== collegeId) return;
+    setMessage("");
+    setError("");
+    setBusyCollegeId(collegeId);
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(collegeId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error || "Failed to update participant");
+        return;
+      }
+      setMessage("Participant updated successfully.");
+      cancelEditing();
+      void fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update participant");
+    } finally {
+      setBusyCollegeId(null);
+    }
+  };
+
+  const handleDeleteParticipant = async (user: User) => {
+    if (!window.confirm(`Delete participant "${user.name}"? This cannot be undone.`)) return;
+
+    setMessage("");
+    setError("");
+    setBusyCollegeId(user.college_id);
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(user.college_id)}`, {
+        method: "DELETE",
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(data.error || "Failed to delete participant");
+        return;
+      }
+      if (editingCollegeId === user.college_id) cancelEditing();
+      setMessage("Participant deleted successfully.");
+      void fetchUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete participant");
+    } finally {
+      setBusyCollegeId(null);
+    }
+  };
+
   return (
     <div>
       <h1 className="page-title">Manage Students & Faculty</h1>
-      <p className="page-subtitle">Register voters manually or upload CSV with name, role (student/faculty), and email. Email is required for voter verification.</p>
+      <p className="page-subtitle">
+        Register voters manually or upload CSV with name, role (student/faculty), and email. You can also edit or
+        delete participants.
+      </p>
       
       {message && <div className="message success">{message}</div>}
       {error && <div className="message error">{error}</div>}
@@ -159,22 +236,92 @@ export default function AdminUsersPage() {
           <table style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                <th style={{ padding: '0.5rem' }}>College ID</th>
                 <th style={{ padding: '0.5rem' }}>Name</th>
                 <th style={{ padding: '0.5rem' }}>Role</th>
                 <th style={{ padding: '0.5rem' }}>Email</th>
+                <th style={{ padding: '0.5rem', textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {users.map(u => (
-                <tr key={`${u.email ?? "unknown"}-${u.college_id}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                  <td style={{ padding: '0.5rem' }}>{u.name}</td>
-                  <td style={{ padding: '0.5rem' }}>{u.role}</td>
-                  <td style={{ padding: '0.5rem' }}>{u.email ?? '-'}</td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const isEditing = editingCollegeId === u.college_id;
+                const isBusy = busyCollegeId === u.college_id;
+
+                return (
+                  <tr key={`${u.email ?? "unknown"}-${u.college_id}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.college_id}</td>
+                    <td style={{ padding: '0.5rem' }}>
+                      {isEditing ? (
+                        <input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm((current) => ({ ...current, name: e.target.value }))}
+                        />
+                      ) : (
+                        u.name
+                      )}
+                    </td>
+                    <td style={{ padding: '0.5rem' }}>
+                      {isEditing ? (
+                        <select
+                          value={editForm.role}
+                          onChange={(e) => setEditForm((current) => ({ ...current, role: e.target.value }))}
+                        >
+                          <option value="student">student</option>
+                          <option value="faculty">faculty</option>
+                        </select>
+                      ) : (
+                        u.role
+                      )}
+                    </td>
+                    <td style={{ padding: '0.5rem' }}>
+                      {isEditing ? (
+                        <input
+                          type="email"
+                          value={editForm.email}
+                          onChange={(e) => setEditForm((current) => ({ ...current, email: e.target.value }))}
+                        />
+                      ) : (
+                        u.email ?? '-'
+                      )}
+                    </td>
+                    <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                      {isEditing ? (
+                        <div className="flex" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={isBusy}
+                            onClick={() => handleUpdateParticipant(u.college_id)}
+                          >
+                            Save
+                          </button>
+                          <button type="button" className="secondary-cta" disabled={isBusy} onClick={cancelEditing}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex" style={{ justifyContent: 'flex-end', gap: '0.5rem' }}>
+                          <button type="button" className="secondary-cta" disabled={isBusy} onClick={() => startEditing(u)}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleDeleteParticipant(u)}
+                            style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b' }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={3} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td>
+                  <td colSpan={5} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>No users found</td>
                 </tr>
               )}
             </tbody>
