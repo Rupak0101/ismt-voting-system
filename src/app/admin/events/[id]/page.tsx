@@ -276,8 +276,8 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
   if (!eventData) return <div>Loading...</div>;
 
   const totalVotes = results.reduce((sum, candidate) => sum + candidate.vote_count, 0);
-  const leader = results[0] ?? null;
-  const runnerUp = results[1] ?? null;
+  const leader = totalVotes > 0 ? (results[0] ?? null) : null;
+  const runnerUp = totalVotes > 0 ? (results[1] ?? null) : null;
   const marginVotes = leader ? leader.vote_count - (runnerUp?.vote_count ?? 0) : 0;
   const leaderShare = leader && totalVotes > 0 ? (leader.vote_count / totalVotes) * 100 : 0;
   const donutStyle: CSSProperties = { background: buildDonutGradient(results, totalVotes) };
@@ -358,14 +358,14 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
         </div>
       </div>
 
-      <div className="grid grid-cols-2">
-        <div className="card results-card">
-          <div className="results-card-head">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", minHeight: "calc(100vh - 380px)" }}>
+        <div className="card results-card" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div className="results-card-head" style={{ flexShrink: 0 }}>
             <h2>Live Results & Analytics</h2>
             <span>{totalVotes} total votes</span>
           </div>
 
-          <div className="results-highlight">
+          <div className="results-highlight" style={{ flexShrink: 0 }}>
             <div>
               <span className="results-highlight-label">Leader</span>
               <strong>{leader ? leader.name : "No leader yet"}</strong>
@@ -380,8 +380,8 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "1.5rem", alignItems: "start" }}>
-            <div className="event-visuals" style={{ textAlign: "center" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "1.5rem", alignItems: "start", flex: 1, overflow: "hidden" }}>
+            <div className="event-visuals" style={{ textAlign: "center", flexShrink: 0 }}>
               <div className="donut-chart" style={donutStyle}>
                 <div className="donut-hole">
                   <strong>{totalVotes}</strong>
@@ -390,11 +390,11 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
               </div>
             </div>
 
-            <div>
+            <div style={{ overflow: "auto", flex: 1 }}>
               {results.length === 0 ? (
                 <p className="text-muted">No candidates or votes yet.</p>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(results.length, 5)}, 1fr)`, gap: "1rem" }}>
                   {results.map((candidate, index) => {
                     const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
 
@@ -485,13 +485,14 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
           </div>
         </div>
 
-        <div className="card">
-          <h2 style={{ marginBottom: "1rem" }}>Manage Candidates</h2>
-          {candidates.length === 0 ? (
-            <p style={{ color: "var(--text-muted)" }}>No candidates yet. Add one below.</p>
-          ) : (
-            <div style={{ maxHeight: "300px", overflowY: "auto", marginBottom: "1rem" }}>
-              <div style={{ display: "grid", gap: "0.75rem" }}>
+        <div className="card" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <h2 style={{ marginBottom: "1rem", flexShrink: 0 }}>Manage Candidates</h2>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {candidates.length === 0 ? (
+              <p style={{ color: "var(--text-muted)" }}>No candidates yet. Add one below.</p>
+            ) : (
+              <div style={{ marginBottom: "1rem" }}>
+                <div style={{ display: "grid", gap: "0.75rem" }}>
                 {candidates.map((candidate) => (
                   <div
                     key={candidate.id}
@@ -531,12 +532,13 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
                     </div>
                   </div>
                 ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {editingCandidateId !== null && (
-            <div style={{ padding: "1rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "rgba(255,255,255,0.3)", marginBottom: "1rem" }}>
+            <div style={{ padding: "1rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "rgba(255,255,255,0.3)", marginTop: "1rem", flexShrink: 0 }}>
               <h3 style={{ marginBottom: "0.75rem" }}>Edit Candidate</h3>
               <form onSubmit={handleUpdateCandidate} className="flex" style={{ flexDirection: "column", gap: "0.75rem" }}>
                 <input

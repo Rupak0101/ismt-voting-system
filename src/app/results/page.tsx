@@ -14,6 +14,7 @@ type EventRecord = {
 type CandidateResult = {
   id: number;
   name: string;
+  description: string | null;
   image_url: string | null;
   vote_count: number;
 };
@@ -114,134 +115,205 @@ export default function ResultsPage() {
   }, [eventResults]);
 
   return (
-    <div className="container">
-      <div className="results-header">
-        <div>
-          <h1 className="page-title">Live Results</h1>
-          <p className="page-subtitle">Auto-refreshing scoreboard and analytics for all ISMT FRESTival events.</p>
-        </div>
+    <div style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", padding: "1rem", overflow: "hidden", backgroundColor: "var(--bg-primary)" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <h1 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 700 }}>Live Results</h1>
         <Link href="/">
-          <button className="secondary-cta">Back to Home</button>
+          <button className="secondary-cta" style={{ fontSize: "0.9rem", padding: "0.4rem 0.8rem" }}>Back</button>
         </Link>
       </div>
 
-      {isLoading && <div className="card">Loading live scores...</div>}
+      {isLoading && <div className="card">Loading...</div>}
       {error && <div className="message error">{error}</div>}
 
       {!isLoading && !error && (
         <>
-          <section className="results-overview-grid">
-            <div className="card stat-tile">
-              <div className="stat-label">Total Votes</div>
-              <div className="stat-value">{overview.totalVotes}</div>
+          {/* Overview Stats - 5 tiles in one row, compact */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "0.4rem", marginBottom: "0.5rem" }}>
+            <div style={{ background: "rgba(63, 94, 251, 0.1)", border: "1px solid var(--border-color)", padding: "0.5rem", borderRadius: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>Total Votes</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{overview.totalVotes}</div>
             </div>
-            <div className="card stat-tile">
-              <div className="stat-label">Events Tracked</div>
-              <div className="stat-value">{overview.totalEvents}</div>
+            <div style={{ background: "rgba(255, 74, 165, 0.1)", border: "1px solid var(--border-color)", padding: "0.5rem", borderRadius: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>Events</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{overview.totalEvents}</div>
             </div>
-            <div className="card stat-tile">
-              <div className="stat-label">Candidates</div>
-              <div className="stat-value">{overview.totalCandidates}</div>
+            <div style={{ background: "rgba(255, 159, 28, 0.1)", border: "1px solid var(--border-color)", padding: "0.5rem", borderRadius: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>Candidates</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{overview.totalCandidates}</div>
             </div>
-            <div className="card stat-tile">
-              <div className="stat-label">Closest Race</div>
-              <div className="stat-value small">
-                {overview.closestRace ? formatShare(overview.closestRace.marginShare) : "N/A"}
-              </div>
-              <div className="stat-subtext">{overview.closestRace ? overview.closestRace.title : "No comparable event yet"}</div>
+            <div style={{ background: "rgba(46, 196, 182, 0.1)", border: "1px solid var(--border-color)", padding: "0.5rem", borderRadius: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>Closest</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{overview.closestRace ? formatShare(overview.closestRace.marginShare) : "N/A"}</div>
             </div>
-            <div className="card stat-tile">
-              <div className="stat-label">Avg Votes / Event</div>
-              <div className="stat-value">{overview.averageVotesPerEvent.toFixed(1)}</div>
+            <div style={{ background: "rgba(155, 93, 229, 0.1)", border: "1px solid var(--border-color)", padding: "0.5rem", borderRadius: "8px", textAlign: "center" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.15rem" }}>Avg/Event</div>
+              <div style={{ fontSize: "1.1rem", fontWeight: 700 }}>{overview.averageVotesPerEvent.toFixed(1)}</div>
             </div>
-          </section>
+          </div>
 
-          <div className="results-grid">
+          {/* Event Results - each event in one row with all analytics */}
+          <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "1fr", gap: "0.5rem" }}>
             {eventResults.map((eventBlock) => {
               const totalVotes = eventBlock.results.reduce((sum, item) => sum + item.vote_count, 0);
-              const leader = eventBlock.results[0] ?? null;
-              const runnerUp = eventBlock.results[1] ?? null;
+              const leader = totalVotes > 0 ? (eventBlock.results[0] ?? null) : null;
+              const runnerUp = totalVotes > 0 ? (eventBlock.results[1] ?? null) : null;
               const marginVotes = leader ? leader.vote_count - (runnerUp?.vote_count ?? 0) : 0;
               const leaderShare = leader && totalVotes > 0 ? (leader.vote_count / totalVotes) * 100 : 0;
               const donutStyle: CSSProperties = { background: buildDonutGradient(eventBlock.results, totalVotes) };
 
               return (
-                <div className="card results-card" key={eventBlock.event.id}>
-                  <div className="results-card-head">
-                    <h2>{eventBlock.event.title}</h2>
-                    <span>{totalVotes} total votes</span>
+                <div key={eventBlock.event.id} style={{ border: "1px solid var(--border-color)", borderRadius: "8px", padding: "0.6rem", background: "rgba(255,255,255,0.5)" }}>
+                  {/* Event Title + Description + Stats Header */}
+                  <div style={{ marginBottom: "0.4rem" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: "0.75rem", alignItems: "flex-start" }}>
+                      <div>
+                        <h3 style={{ margin: "0", fontSize: "1.05rem", fontWeight: 700 }}>{eventBlock.event.title}</h3>
+                        {eventBlock.event.description && (
+                          <p style={{ margin: "0.2rem 0 0 0", fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                            {eventBlock.event.description}
+                          </p>
+                        )}
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Leader</div>
+                        <strong style={{ fontSize: "0.9rem" }}>{leader ? leader.name : "—"}</strong>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Lead</div>
+                        <strong style={{ fontSize: "0.9rem" }}>{leader ? `${marginVotes}` : "—"}</strong>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Share</div>
+                        <strong style={{ fontSize: "0.9rem" }}>{leader ? formatShare(leaderShare) : "—"}</strong>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Votes</div>
+                        <strong style={{ fontSize: "0.9rem" }}>{totalVotes}</strong>
+                      </div>
+                    </div>
                   </div>
-                  {eventBlock.event.description && <p className="results-card-description">{eventBlock.event.description}</p>}
 
-                  <div className="results-highlight">
-                    <div>
-                      <span className="results-highlight-label">Leader</span>
-                      <strong>{leader ? leader.name : "No leader yet"}</strong>
-                    </div>
-                    <div>
-                      <span className="results-highlight-label">Lead</span>
-                      <strong>{leader ? `${marginVotes} votes` : "0 votes"}</strong>
-                    </div>
-                    <div>
-                      <span className="results-highlight-label">Vote Share</span>
-                      <strong>{leader ? formatShare(leaderShare) : "0.0%"}</strong>
-                    </div>
-                  </div>
-
-                  <div className="results-card-layout">
-                    <div className="event-visuals">
-                      <div className="donut-chart" style={donutStyle}>
-                        <div className="donut-hole">
+                  {/* Candidates Grid + Chart */}
+                  <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: "0.6rem" }}>
+                    {/* Donut Chart and Legend */}
+                    <div style={{ textAlign: "center" }}>
+                      <div className="donut-chart" style={{ ...donutStyle, width: "110px", height: "110px", margin: "0 auto" }}>
+                        <div className="donut-hole" style={{ fontSize: "0.75rem" }}>
                           <strong>{totalVotes}</strong>
                           <span>votes</span>
                         </div>
                       </div>
-
-                      <div className="chart-legend">
-                        {eventBlock.results.slice(0, 5).map((candidate, index) => {
-                          const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
-                          return (
-                            <div key={candidate.id} className="chart-legend-item">
-                              <span className="legend-dot" style={{ backgroundColor: getCandidateColor(index) }} />
-                              <span className="legend-name">{candidate.name}</span>
-                              <span className="legend-value">{formatShare(share)}</span>
-                            </div>
-                          );
-                        })}
+                      <div style={{ fontSize: "0.65rem", marginTop: "0.3rem", maxHeight: "140px", overflowY: "auto" }}>
+                        {totalVotes === 0 ? (
+                          <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", padding: "0.5rem" }}>
+                            No votes yet
+                          </div>
+                        ) : (
+                          eventBlock.results
+                            .filter((candidate) => candidate.vote_count > 0)
+                            .map((candidate, index) => {
+                              const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
+                              return (
+                                <div key={candidate.id} style={{ display: "flex", alignItems: "center", gap: "0.25rem", justifyContent: "center", lineHeight: "1.3" }}>
+                                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: getCandidateColor(index), flexShrink: 0 }} />
+                                  <span style={{ fontSize: "0.6rem" }}>#{index + 1} {candidate.name.slice(0, 8)}: {formatShare(share)}</span>
+                                </div>
+                              );
+                            })
+                        )}
                       </div>
                     </div>
 
-                    <div className="candidate-results-list">
-                      {eventBlock.results.length === 0 && <p style={{ color: "var(--text-muted)" }}>No candidates added yet.</p>}
-                      {eventBlock.results.map((candidate, index) => {
-                        const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
-                        const barWidth = share > 0 ? Math.max(share, 6) : 0;
-                        return (
-                          <div className="candidate-result-row" key={candidate.id}>
-                            <div className="candidate-result-main">
-                              {candidate.image_url ? (
-                                <img src={candidate.image_url} alt={candidate.name} className="candidate-avatar" />
-                              ) : (
-                                <div className="candidate-avatar placeholder">{candidate.name.slice(0, 1).toUpperCase()}</div>
-                              )}
-                              <div>
-                                <span>{candidate.name}</span>
-                                <div className="candidate-rank">#{index + 1} in this event</div>
-                              </div>
-                            </div>
-                            <div className="vote-bar-meta">
-                              <strong>{candidate.vote_count} votes</strong>
-                              <span>{formatShare(share)}</span>
-                            </div>
-                            <div className="vote-bar-track">
+                    {/* Candidates as compact cards */}
+                    <div>
+                      {eventBlock.results.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>No candidates.</p>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(eventBlock.results.length, 8)}, 1fr)`, gap: "0.4rem" }}>
+                          {eventBlock.results.map((candidate, index) => {
+                            const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
+
+                            return (
                               <div
-                                className="vote-bar-fill"
-                                style={{ width: `${barWidth}%`, backgroundColor: getCandidateColor(index) }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                                key={candidate.id}
+                                style={{
+                                  padding: "0.4rem",
+                                  borderRadius: "6px",
+                                  border: `1px solid ${getCandidateColor(index)}33`,
+                                  background: `${getCandidateColor(index)}11`,
+                                  textAlign: "center",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "0.25rem",
+                                }}
+                              >
+                                <div style={{ fontSize: "0.7rem", fontWeight: 700, color: getCandidateColor(index) }}>
+                                  {totalVotes > 0 ? `#${index + 1}` : "—"}
+                                </div>
+                                {candidate.image_url ? (
+                                  <img
+                                    src={candidate.image_url}
+                                    alt={candidate.name}
+                                    style={{
+                                      width: "45px",
+                                      height: "45px",
+                                      borderRadius: "50%",
+                                      objectFit: "cover",
+                                      margin: "0 auto",
+                                      border: `2px solid ${getCandidateColor(index)}`,
+                                    }}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      width: "45px",
+                                      height: "45px",
+                                      borderRadius: "50%",
+                                      margin: "0 auto",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: "1.1rem",
+                                      fontWeight: 700,
+                                      background: getCandidateColor(index),
+                                      color: "white",
+                                      border: `2px solid ${getCandidateColor(index)}`,
+                                    }}
+                                  >
+                                    {candidate.name.slice(0, 1).toUpperCase()}
+                                  </div>
+                                )}
+                                <div style={{ lineHeight: "1.1" }}>
+                                  <div style={{ fontWeight: 600, fontSize: "0.65rem", marginBottom: "0.1rem", wordBreak: "break-word" }}>
+                                    {candidate.name}
+                                  </div>
+                                  {candidate.description && (
+                                    <div style={{ fontSize: "0.55rem", color: "var(--text-muted)", marginBottom: "0.1rem", wordBreak: "break-word" }}>
+                                      {candidate.description}
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: "0.6rem", color: "var(--text-muted)" }}>{candidate.vote_count}</div>
+                                </div>
+                                <div style={{ height: "3px", borderRadius: "1px", background: "rgba(0,0,0,0.1)", overflow: "hidden" }}>
+                                  <div
+                                    style={{
+                                      height: "100%",
+                                      width: `${share > 0 ? share : 0}%`,
+                                      background: getCandidateColor(index),
+                                      transition: "width 0.3s ease",
+                                    }}
+                                  />
+                                </div>
+                                <div style={{ fontSize: "0.6rem", fontWeight: 600, color: getCandidateColor(index) }}>
+                                  {formatShare(share)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
