@@ -380,61 +380,107 @@ export default function AdminEventDetailPage(props: { params: Promise<{ id: stri
             </div>
           </div>
 
-          <div className="results-card-layout">
-            <div className="event-visuals">
+          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: "1.5rem", alignItems: "start" }}>
+            <div className="event-visuals" style={{ textAlign: "center" }}>
               <div className="donut-chart" style={donutStyle}>
                 <div className="donut-hole">
                   <strong>{totalVotes}</strong>
                   <span>votes</span>
                 </div>
               </div>
-
-              <div className="chart-legend">
-                {results.slice(0, 5).map((candidate, index) => {
-                  const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
-                  return (
-                    <div key={candidate.id} className="chart-legend-item">
-                      <span className="legend-dot" style={{ backgroundColor: getCandidateColor(index) }} />
-                      <span className="legend-name">{candidate.name}</span>
-                      <span className="legend-value">{formatShare(share)}</span>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
 
-            <div className="candidate-results-list">
-              {results.length === 0 && <p className="text-muted">No candidates or votes yet.</p>}
-              {results.map((candidate, index) => {
-                const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
-                const barWidth = share > 0 ? Math.max(share, 6) : 0;
+            <div>
+              {results.length === 0 ? (
+                <p className="text-muted">No candidates or votes yet.</p>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
+                  {results.map((candidate, index) => {
+                    const share = totalVotes > 0 ? (candidate.vote_count / totalVotes) * 100 : 0;
 
-                return (
-                  <div className="candidate-result-row" key={candidate.id}>
-                    <div className="candidate-result-main">
-                      {candidate.image_url ? (
-                        <img src={candidate.image_url} alt={candidate.name} className="candidate-avatar" />
-                      ) : (
-                        <div className="candidate-avatar placeholder">{candidate.name.slice(0, 1).toUpperCase()}</div>
-                      )}
-                      <div>
-                        <span>{candidate.name}</span>
-                        <div className="candidate-rank">#{index + 1} in this event</div>
-                      </div>
-                    </div>
-                    <div className="vote-bar-meta">
-                      <strong>{candidate.vote_count} votes</strong>
-                      <span>{formatShare(share)}</span>
-                    </div>
-                    <div className="vote-bar-track">
+                    return (
                       <div
-                        className="vote-bar-fill"
-                        style={{ width: `${barWidth}%`, backgroundColor: getCandidateColor(index) }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                        key={candidate.id}
+                        style={{
+                          padding: "1rem",
+                          borderRadius: "12px",
+                          border: "1px solid var(--border-color)",
+                          background: "rgba(255,255,255,0.3)",
+                          textAlign: "center",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        <div style={{ fontSize: "0.85rem", fontWeight: 700, color: getCandidateColor(index) }}>
+                          #{index + 1}
+                        </div>
+                        {candidate.image_url ? (
+                          <img
+                            src={candidate.image_url}
+                            alt={candidate.name}
+                            style={{
+                              width: "80px",
+                              height: "80px",
+                              borderRadius: "50%",
+                              objectFit: "cover",
+                              margin: "0 auto",
+                              border: `3px solid ${getCandidateColor(index)}`,
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "80px",
+                              height: "80px",
+                              borderRadius: "50%",
+                              margin: "0 auto",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "2rem",
+                              fontWeight: 700,
+                              background: getCandidateColor(index),
+                              color: "white",
+                              border: `3px solid ${getCandidateColor(index)}`,
+                            }}
+                          >
+                            {candidate.name.slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "0.25rem" }}>
+                            {candidate.name}
+                          </div>
+                          <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                            {candidate.vote_count} votes
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            height: "6px",
+                            borderRadius: "3px",
+                            background: "rgba(0,0,0,0.1)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${share > 0 ? share : 0}%`,
+                              background: getCandidateColor(index),
+                              transition: "width 0.3s ease",
+                            }}
+                          />
+                        </div>
+                        <div style={{ fontSize: "0.9rem", fontWeight: 600, color: getCandidateColor(index) }}>
+                          {formatShare(share)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
