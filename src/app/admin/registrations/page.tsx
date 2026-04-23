@@ -33,6 +33,10 @@ export default function AdminRegistrationsPage() {
   });
   const [error, setError] = useState("");
   const [registrationQrCodeDataUrl, setRegistrationQrCodeDataUrl] = useState("");
+  const [editingRegistrationId, setEditingRegistrationId] = useState<number | null>(null);
+  const [deletingRegistrationId, setDeletingRegistrationId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{ status: "pending" | "confirmed" }>({ status: "pending" });
+  const [message, setMessage] = useState("");
 
   const fetchRegistrations = useCallback(async () => {
     setError("");
@@ -68,13 +72,79 @@ export default function AdminRegistrationsPage() {
     void generateRegistrationQr();
   }, []);
 
+  const startEdit = (registration: ProgramRegistration) => {
+    setError("");
+    setMessage("");
+    setEditingRegistrationId(registration.id);
+    setEditForm({ status: registration.status });
+  };
+
+  const cancelEdit = () => {
+    setEditingRegistrationId(null);
+    setEditForm({ status: "pending" });
+  };
+
+  const handleUpdateRegistration = async (registrationId: number) => {
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(`/api/admin/registrations/${registrationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+
+      const responseData = (await res.json().catch(() => ({}))) as { error?: string };
+
+      if (!res.ok) {
+        setError(responseData.error || "Failed to update registration");
+        return;
+      }
+
+      setMessage("Registration updated successfully.");
+      cancelEdit();
+      void fetchRegistrations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update registration");
+    }
+  };
+
+  const handleDeleteRegistration = async (registration: ProgramRegistration) => {
+    if (!window.confirm(`Delete registration for ${registration.user.name}? This cannot be undone.`)) return;
+
+    setError("");
+    setMessage("");
+    setDeletingRegistrationId(registration.id);
+    try {
+      const res = await fetch(`/api/admin/registrations/${registration.id}`, {
+        method: "DELETE",
+      });
+
+      const responseData = (await res.json().catch(() => ({}))) as { error?: string };
+
+      if (!res.ok) {
+        setError(responseData.error || "Failed to delete registration");
+        setDeletingRegistrationId(null);
+        return;
+      }
+
+      if (editingRegistrationId === registration.id) cancelEdit();
+      setMessage("Registration deleted successfully.");
+      void fetchRegistrations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete registration");
+      setDeletingRegistrationId(null);
+    }
+  };
+
   const registrationPageUrl = typeof window !== "undefined" ? `${window.location.origin}/register` : "/register";
 
   return (
     <div>
       <h1 className="page-title">Program Registration Records</h1>
-      <p className="page-subtitle">All attendees who registered for the program (one-time registration).</p>
+      <p className="page-subtitle">All attendees who registered for the program (one-time registration). Manage, confirm or delete registrations.</p>
 
+      {message && <div className="message success">{message}</div>}
       {error && <div className="message error">{error}</div>}
 
       <div className="card mb-4">
@@ -136,7 +206,7 @@ export default function AdminRegistrationsPage() {
       </div>
 
       <div className="card">
-        <div style={{ maxHeight: "460px", overflowY: "auto" }}>
+        <div style={{ maxHeight: "600px", overflowY: "auto" }}>
           <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
@@ -146,43 +216,95 @@ export default function AdminRegistrationsPage() {
                 <th style={{ padding: "0.5rem" }}>Status</th>
                 <th style={{ padding: "0.5rem" }}>Confirmed At</th>
                 <th style={{ padding: "0.5rem" }}>Requested At</th>
+                <th style={{ padding: "0.5rem", textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {data.registrations.map((registration) => (
-                <tr key={registration.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
-                  <td style={{ padding: "0.5rem" }}>{registration.user.name}</td>
-                  <td style={{ padding: "0.5rem" }}>{registration.user.role ?? "-"}</td>
-                  <td style={{ padding: "0.5rem" }}>{registration.email}</td>
-                  <td style={{ padding: "0.5rem" }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        padding: "0.2rem 0.55rem",
-                        borderRadius: "999px",
-                        fontSize: "0.8rem",
-                        background:
-                          registration.status === "confirmed"
-                            ? "rgba(16, 185, 129, 0.12)"
-                            : "rgba(245, 158, 11, 0.12)",
-                        border:
-                          registration.status === "confirmed"
-                            ? "1px solid rgba(16, 185, 129, 0.35)"
-                            : "1px solid rgba(245, 158, 11, 0.35)",
-                      }}
-                    >
-                      {registration.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: "0.5rem" }}>
-                    {registration.confirmed_at ? new Date(registration.confirmed_at).toLocaleString() : "-"}
-                  </td>
-                  <td style={{ padding: "0.5rem" }}>{new Date(registration.created_at).toLocaleString()}</td>
-                </tr>
-              ))}
+              {data.registrations.map((registration) => {
+                const isEditing = editingRegistrationId === registration.id;
+                const isDeleting = deletingRegistrationId === registration.id;
+
+                return (
+                  <tr key={registration.id} style={{ borderBottom: "1px solid var(--border-color)" }}>
+                    <td style={{ padding: "0.5rem" }}>{registration.user.name}</td>
+                    <td style={{ padding: "0.5rem" }}>{registration.user.role ?? "-"}</td>
+                    <td style={{ padding: "0.5rem" }}>{registration.email}</td>
+                    <td style={{ padding: "0.5rem" }}>
+                      {isEditing ? (
+                        <select
+                          value={editForm.status}
+                          onChange={(e) => setEditForm({ status: e.target.value as "pending" | "confirmed" })}
+                        >
+                          <option value="pending">pending</option>
+                          <option value="confirmed">confirmed</option>
+                        </select>
+                      ) : (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "0.2rem 0.55rem",
+                            borderRadius: "999px",
+                            fontSize: "0.8rem",
+                            background:
+                              registration.status === "confirmed"
+                                ? "rgba(16, 185, 129, 0.12)"
+                                : "rgba(245, 158, 11, 0.12)",
+                            border:
+                              registration.status === "confirmed"
+                                ? "1px solid rgba(16, 185, 129, 0.35)"
+                                : "1px solid rgba(245, 158, 11, 0.35)",
+                          }}
+                        >
+                          {registration.status}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.5rem" }}>
+                      {registration.confirmed_at ? new Date(registration.confirmed_at).toLocaleString() : "-"}
+                    </td>
+                    <td style={{ padding: "0.5rem" }}>{new Date(registration.created_at).toLocaleString()}</td>
+                    <td style={{ padding: "0.5rem", textAlign: "right" }}>
+                      {isEditing ? (
+                        <div className="flex" style={{ justifyContent: "flex-end", gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={isDeleting}
+                            onClick={() => handleUpdateRegistration(registration.id)}
+                          >
+                            Save
+                          </button>
+                          <button type="button" className="secondary-cta" disabled={isDeleting} onClick={cancelEdit}>
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex" style={{ justifyContent: "flex-end", gap: "0.5rem" }}>
+                          <button
+                            type="button"
+                            className="secondary-cta"
+                            disabled={isDeleting}
+                            onClick={() => startEdit(registration)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            onClick={() => handleDeleteRegistration(registration)}
+                            style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {data.registrations.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: "1rem", textAlign: "center", color: "var(--text-muted)" }}>
+                  <td colSpan={7} style={{ padding: "1rem", textAlign: "center", color: "var(--text-muted)" }}>
                     No registration records yet.
                   </td>
                 </tr>
